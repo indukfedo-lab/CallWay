@@ -16,6 +16,19 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Google Places setup
+
+The search form sends its prompt to `POST /api`, which calls Google Places API (New) Text Search from the server. To enable it locally:
+
+1. Enable Places API (New) and billing in the Google Cloud project that owns the key.
+2. Add a server-only key to `.env.local`:
+
+	```env
+	PLACES_API_KEY=your-google-cloud-api-key
+	```
+
+3. Restart the development server after changing `.env.local`.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
