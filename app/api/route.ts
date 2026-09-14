@@ -289,7 +289,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           message: `Where exactly is the service needed?
-Please provide the specific street name, house/building number, block, or other detailed location.`,
+Please provide the specific street name, house/building number, block, ZIP code, or other detailed location.`,
           needsLocation: true,
         },
         { status: 200 },

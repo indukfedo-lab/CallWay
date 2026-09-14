@@ -16,3 +16,12 @@ body {
   color: aliceblue;
   border-radius: 20px;
 }
+
+.messages {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.messages::-webkit-scrollbar {
+  display: none;
+}
