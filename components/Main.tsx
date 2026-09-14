@@ -243,7 +243,7 @@ export default function Main({ missionId }: MainProps) {
             if (condition !== "completed" && condition !== "failed") {
               let cleanStatus = condition;
 
-              if (condition === "queue") {
+              if (condition === "queued") {
                 cleanStatus = "Queue";
               } else if (condition === "ringing") {
                 cleanStatus = "Ringing";
@@ -256,7 +256,7 @@ export default function Main({ missionId }: MainProps) {
                   {
                     id: crypto.randomUUID(),
                     role: "assistant" as const,
-                    content: cleanStatus,
+                    content: `${cleanStatus}...`,
                   },
                 ];
 
@@ -316,7 +316,9 @@ ${result.summary ?? ""}`;
   return (
     <>
       <section
-        className={`hero relative m-0 flex flex-col items-center w-screen h-screen ${start ? "px-[19%] py-[2%]" : ""} bg-yellow-500 bg-[radial-gradient(circle_at_20%_30%,yellow_0%,transparent_50%),radial-gradient(circle_at_80%_20%,gold_0%,transparent_50%),radial-gradient(circle_at_50%_80%,white_0%,transparent_50%)]`}
+        className={`hero relative m-0 flex flex-col items-center w-screen h-screen overflow-hidden ${
+          start ? "px-[19%] py-[2%]" : ""
+        } ...`}
       >
         <div
           className={`flex flex-col items-center ${start ? "hidden" : ""} mt-[5%] w-full`}
@@ -377,7 +379,7 @@ ${result.summary ?? ""}`;
           </div>
         )}
         {start && (
-          <div className="messages w-full flex flex-col px-[5%] pb-[100px] gap-[50px]">
+          <div className="messages w-full flex-1 min-h-0 overflow-y-auto px-[5%] pb-[100px] gap-[50px]">
             {messages.map((message) => (
               <div
                 key={message.id}
