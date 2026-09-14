@@ -8,6 +8,20 @@ type SearchPlot = {
   callObjective: string;
 };
 
+function toE164(phone: string) {
+  const cleaned = phone.replace(/\D/g, "");
+
+  if (cleaned.startsWith("0")) {
+    return `+62${cleaned.slice(1)}`;
+  }
+
+  if (cleaned.startsWith("62")) {
+    return `+${cleaned}`;
+  }
+
+  return phone;
+}
+
 export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
   const { callId, callIndex, maxCalls, candidates, callObjective } =
@@ -60,7 +74,7 @@ export async function POST(request: Request) {
 
   // Try next provider
   const nextIndex = callIndex + 1;
-  const nextPhone = candidates[nextIndex].internationalPhoneNumber;
+  const nextPhone = toE164(candidates[nextIndex].internationalPhoneNumber);
 
   const nextCall = await makeCall({ callObjective } as SearchPlot, nextPhone);
 

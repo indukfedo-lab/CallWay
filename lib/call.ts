@@ -39,7 +39,6 @@ const CALL_RESULT_SCHEMA = {
   additionalProperties: false,
 };
 
-
 export async function makeCall(plotSearch: SearchPlot, number: string) {
   const CallEApiKey = process.env.CALLE_API_KEY;
 
@@ -67,7 +66,15 @@ export async function makeCall(plotSearch: SearchPlot, number: string) {
   const result = await call.json();
 
   if (!call.ok) {
-    throw new Error(result.message ?? "CALL-E Failed");
+    console.log("CALL-E STATUS:", call.status);
+    console.log("CALL-E ERROR:", result);
+
+    throw new Error(
+      result.message ||
+        result.error?.message ||
+        result.failure_message ||
+        JSON.stringify(result),
+    );
   }
 
   return result;

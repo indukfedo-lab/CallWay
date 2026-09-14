@@ -80,6 +80,20 @@ type RankedPhoneNumber = GooglePlaces & {
   score: number;
 };
 
+function toE164(phone: string) {
+  const cleaned = phone.replace(/\D/g, "");
+
+  if (cleaned.startsWith("0")) {
+    return `+62${cleaned.slice(1)}`;
+  }
+
+  if (cleaned.startsWith("62")) {
+    return `+${cleaned}`;
+  }
+
+  return phone;
+}
+
 async function SearchPlotter(
   input: string,
   location: string | null,
@@ -314,7 +328,10 @@ Please provide the specific street name, house/building number, block, or other 
         callObjective: plotSearch.callObjective,
       });
 
-    const call = await makeCall(plotSearch, places[0].internationalPhoneNumber);
+    const call = await makeCall(
+      plotSearch,
+      toE164(places[0].internationalPhoneNumber),
+    );
 
     return Response.json({
       id: call.id,
