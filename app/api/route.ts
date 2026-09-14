@@ -270,7 +270,8 @@ export async function POST(req: Request) {
     if (!query.location || !query.location.trim()) {
       return NextResponse.json(
         {
-          message: "Where are you Located currently",
+          message: `Where exactly is the service needed?
+Please provide the specific street name, house/building number, block, or other detailed location.`,
           needsLocation: true,
         },
         { status: 200 },

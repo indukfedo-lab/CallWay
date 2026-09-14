@@ -40,6 +40,10 @@ export async function POST(request: Request) {
 
   const result = await req.json();
 
+  if (!req.ok) {
+    throw new Error("CALL-E API Error");
+  }
+
   if (result.status !== "completed" && result.status !== "failed") {
     return Response.json(result);
   }

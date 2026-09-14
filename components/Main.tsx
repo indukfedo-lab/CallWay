@@ -178,6 +178,21 @@ export default function Main({ missionId }: MainProps) {
 
       if (!callId) throw new Error("Failed to fetch Call ID");
 
+      setMessages((prev) => {
+        const finalMessage = [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant" as const,
+            content: "Calling a nearby provider...",
+          },
+        ];
+
+        saveMessages(finalMessage, currentMissionId);
+
+        return finalMessage;
+      });
+
       let lastStatus = "";
 
       const polling = async () => {
@@ -199,6 +214,22 @@ export default function Main({ missionId }: MainProps) {
           const result = await query.json();
 
           if (result.switchedProvider) {
+            setMessages((prev) => {
+              const finalMessage = [
+                ...prev,
+                {
+                  id: crypto.randomUUID(),
+                  role: "assistant" as const,
+                  content:
+                    "Provider are not available, calling other provider...",
+                },
+              ];
+
+              saveMessages(finalMessage, currentMissionId);
+
+              return finalMessage;
+            });
+
             callId = result.id;
             callIndex = result.callIndex;
           }
@@ -210,13 +241,22 @@ export default function Main({ missionId }: MainProps) {
             setStatus(condition);
 
             if (condition !== "completed" && condition !== "failed") {
+              let cleanStatus = condition;
+
+              if (condition === "queue") {
+                cleanStatus = "Queue";
+              } else if (condition === "ringing") {
+                cleanStatus = "Ringing";
+              } else if (condition === "in_progress") {
+                cleanStatus = "In progress";
+              }
               setMessages((prev) => {
                 const finalMessage = [
                   ...prev,
                   {
                     id: crypto.randomUUID(),
                     role: "assistant" as const,
-                    content: condition,
+                    content: cleanStatus,
                   },
                 ];
 
@@ -276,7 +316,7 @@ ${result.summary ?? ""}`;
   return (
     <>
       <section
-        className={`hero relative m-0 flex flex-col items-center w-screen h-screen ${start ? "px-[20%] py-[2%]" : ""} bg-yellow-500 bg-[radial-gradient(circle_at_20%_30%,yellow_0%,transparent_50%),radial-gradient(circle_at_80%_20%,gold_0%,transparent_50%),radial-gradient(circle_at_50%_80%,white_0%,transparent_50%)]`}
+        className={`hero relative m-0 flex flex-col items-center w-screen h-screen ${start ? "px-[19%] py-[2%]" : ""} bg-yellow-500 bg-[radial-gradient(circle_at_20%_30%,yellow_0%,transparent_50%),radial-gradient(circle_at_80%_20%,gold_0%,transparent_50%),radial-gradient(circle_at_50%_80%,white_0%,transparent_50%)]`}
       >
         <div
           className={`flex flex-col items-center ${start ? "hidden" : ""} mt-[5%] w-full`}
@@ -337,13 +377,26 @@ ${result.summary ?? ""}`;
           </div>
         )}
         {start && (
-          <div className="messages w-full flex flex-col px-[5%] pb-[100px]">
+          <div className="messages w-full flex flex-col px-[5%] pb-[100px] gap-[50px]">
             {messages.map((message) => (
               <div
                 key={message.id}
-                className={`message text-sm ${message.role === "user" ? "bg-[rgba(255,255,255,0.2)] border border-white rounded-[20px] self-end" : "self-start"}  p-[20px] mt-[10px] whitespace-pre-line`}
+                className={`message text-sm ${message.role === "user" ? "bg-[rgba(255,255,255,0.2)] border border-white rounded-[20px] self-end" : "self-start"}  p-[20px] whitespace-pre-line`}
               >
-                {message.content}
+                {message.role === "assistant" && message.content.includes("\n")
+                  ? message.content.split("\n").map((line, index) => (
+                      <p
+                        key={index}
+                        className={
+                          index === 0
+                            ? "font-semibold text-base"
+                            : "text-sm text-gray-500"
+                        }
+                      >
+                        {line}
+                      </p>
+                    ))
+                  : message.content}
               </div>
             ))}
           </div>
