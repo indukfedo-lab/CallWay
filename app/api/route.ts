@@ -233,6 +233,15 @@ async function rankPhoneNumbers(
 
   const searchPlace = await SearchPlaces(plotSearch.searchQuery, placesApiKey);
 
+  console.log("GOOGLE PLACES COUNT:", searchPlace.length);
+  console.log(
+    "GOOGLE PHONES:",
+    searchPlace.map((p) => ({
+      name: p.displayName,
+      phone: p.internationalPhoneNumber,
+    })),
+  );
+
   return searchPlace
     .filter((p) => Boolean(p.internationalPhoneNumber))
     .map((place) => {
