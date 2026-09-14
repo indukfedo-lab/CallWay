@@ -130,6 +130,7 @@ The objective MUST:
 - Tell the agent to summarize the provider's response when finished.
 - If a location is provided, determine the most appropriate language for the CALL-E agent based on that location and instruct the agent to conduct the call in that language.
 - If no location is provided, default to English for the CALL-E agent.
+- If the provided location includes a ZIP code, include it in the CALL-E objective and instruct the agent to provide it if an automated phone system requests the customer's ZIP code.
 
 The agent should gather information for the customer, not make decisions on the customer's behalf.
 
@@ -289,7 +290,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           message: `Where exactly is the service needed?
-Please provide the specific street name, house/building number, block, ZIP code, or other detailed location.`,
+Please provide the specific street name, house/building number, block, or other detailed location.`,
           needsLocation: true,
         },
         { status: 200 },
