@@ -53,7 +53,7 @@ export default function Sidebar() {
     <>
       <section className="relative sidebar flex h-screen w-64 shrink-0 bg-white items-center flex-col">
         <Image
-          src="/callway_logocropped.png"
+          src="/loom-header-logo.png"
           alt="Logo"
           width={250}
           height={80}
@@ -61,7 +61,7 @@ export default function Sidebar() {
         />
         <Link
           href={`/mission/new`}
-          className={`text-lg font-bold text-black-100 mt-10 hover:scale-115 transition-transform duration-300 translate-x-[-10%]`}
+          className={`text-lg font-bold text-black mt-10 hover:scale-115 transition-transform duration-300 translate-x-[-10%]`}
         >
           + New Mission
         </Link>
@@ -86,7 +86,7 @@ export default function Sidebar() {
             className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-gray-100"
             aria-expanded={profileOpen}
           >
-            <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-yellow-500">
+            <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-blue-900">
               {user?.user_metadata?.picture ? (
                 <img
                   referrerPolicy="no-referrer"

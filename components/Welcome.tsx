@@ -1,25 +1,26 @@
 "use client";
 
-import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 import { User } from "@supabase/supabase-js";
-import Nav, { loginWithGoogle } from "@/components/Nav";
+import { loginWithGoogle } from "@/components/Nav";
+import Image from "next/image";
 import Sidebar from "@/components/Sidebar";
 import Main from "@/components/Main";
 
 export function Welcome() {
-  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [prompt, setPrompt] = useState("");
 
   useEffect(() => {
     const checkUser = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-
       console.log("USER:", user);
-      setUser(user);
+      console.log("USER:", user);
+      setLoggedIn(!!user);
       setLoading(false);
     };
 
@@ -28,7 +29,7 @@ export function Welcome() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      setLoggedIn(!!session?.user);
     });
 
     return () => subscription.unsubscribe();
@@ -36,38 +37,122 @@ export function Welcome() {
 
   if (loading) return null;
 
-  if (!user) {
+  if (!loggedIn) {
     return (
-      <section className="hero relative flex min-h-screen w-full flex-col overflow-hidden bg-[radial-gradient(circle_at_50%_42%,#ffd84d_0%,#f5a800_35%,#e87500_70%,#b93b05_100%)] text-stone-950">
-        <Nav />
+      <section className="loom-home relative flex min-h-screen w-full flex-col overflow-hidden text-white">
+        <div className="silk-field" aria-hidden="true">
+          <div className="silk-ribbon silk-ribbon-one" />
+          <div className="silk-ribbon silk-ribbon-two" />
+          <div className="silk-ribbon silk-ribbon-three" />
+          <div className="ocean-glow" />
+        </div>
 
-        <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-16 text-center sm:py-24">
-          <p className="mb-5 rounded-full border border-white/40 bg-white/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.28em] text-stone-900/75 backdrop-blur-sm">
-            Help is closer than you think
-          </p>
-          <div className="logo mb-7 w-full max-w-[460px] drop-shadow-[0_18px_20px_rgba(112,39,0,0.22)] sm:max-w-[600px]">
-            <Image
-              src="/callway_logogray.png"
-              alt="CallWay"
-              width={600}
-              height={190}
-              priority
-              className="h-auto w-full"
-            />
-          </div>
-          <h1 className="max-w-3xl text-4xl font-black leading-[0.95] tracking-tight text-stone-950 sm:text-6xl lg:text-7xl">
-            The right help, right when you need it.
-          </h1>
-          <p className="mt-6 max-w-xl text-base leading-7 text-stone-900/75 sm:text-lg">
-            Tell us what went wrong. CallWay finds a nearby technician and makes
-            the call for you.
-          </p>
-          <button
-            onClick={loginWithGoogle}
-            className="mt-9 rounded-full bg-stone-950 px-7 py-4 text-sm font-bold text-white shadow-xl shadow-orange-950/25 transition hover:-translate-y-1 hover:bg-stone-800"
+        <header className="fixed z-10 flex items-center justify-between px-6 py-5 sm:px-10 sm:py-7">
+          <a
+            href="/"
+            className="flex items-center gap-3"
+            aria-label="Loom AI home"
           >
-            Start a request <span aria-hidden="true">-&gt;</span>
-          </button>
+            <Image
+              aria-hidden="true"
+              src="/loom-logo.png"
+              alt="Loom AI"
+              width={32}
+              height={32}
+              className="w-12 h-auto rounded-full "
+            />
+            <span className="text-lg font-semibold tracking-wide">
+              loom<span className="text-cyan-200">.</span>
+            </span>
+          </a>
+          <div className="flex fixed right-4 items-center gap-3">
+            <span className="hidden text-xs font-medium tracking-wide text-slate-300 sm:inline">
+              Your personal AI
+            </span>
+            <button
+              onClick={loginWithGoogle}
+              className="rounded-full border border-white/20 px-4 py-2 text-sm font-medium text-white/90 transition hover:border-cyan-200/60 hover:bg-white/10"
+            >
+              Log in
+            </button>
+          </div>
+        </header>
+
+        <main className="relative z-10 mx-auto mt-10rem flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-5 pb-16 pt-10 text-center sm:px-8 sm:pb-24 sm:pt-14">
+          <h1 className="max-w-4xl text-5xl font-semibold leading-[1.02] mt-7 tracking-tight text-white sm:text-7xl lg:text-[88px]">
+            AI that knows
+            <span className="block font-normal text-cyan-100">
+              your kind of thing.
+            </span>
+          </h1>
+          <p className="mt-6 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
+            Meet Loom. A thoughtful chatbot that gets to know your taste, so
+            every conversation feels a little more like you.
+          </p>
+
+          <form
+            className="loom-composer mt-10 w-full max-w-2xl text-left"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void loginWithGoogle();
+            }}
+            onClick={() => {
+              if (!loggedIn) {
+                loginWithGoogle();
+              }
+            }}
+          >
+            <label htmlFor="loom-prompt" className="sr-only">
+              Start a conversation with Loom
+            </label>
+            <textarea
+              id="loom-prompt"
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void loginWithGoogle();
+                }
+              }}
+              rows={2}
+              placeholder="Tell Loom what you're in the mood for..."
+              className="w-full resize-none bg-transparent px-5 pt-5 text-base leading-6 text-white outline-none placeholder:text-slate-400 sm:px-6"
+            />
+            <div className="flex items-center justify-between gap-3 px-4 pb-4 pt-2 sm:px-5">
+              <span className="text-xs text-slate-400">
+                A good place to begin
+              </span>
+              <button
+                type="submit"
+                aria-label="Start chatting with Loom"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cyan-100 text-slate-950 transition hover:scale-105 hover:bg-white"
+              >
+                <span aria-hidden="true">-&gt;</span>
+              </button>
+            </div>
+          </form>
+
+          <div className="mt-5 flex max-w-2xl flex-wrap justify-center gap-2">
+            {[
+              "Find my next comfort show",
+              "Build a playlist for a rainy day",
+              "Help me plan a weekend",
+            ].map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                onClick={() => setPrompt(suggestion)}
+                className="rounded-full border border-white/15 bg-white/[0.04] px-3.5 py-2 text-xs text-slate-300 transition hover:border-cyan-100/50 hover:bg-white/10 hover:text-white sm:text-sm"
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+
+          <p className="mt-12 text-xs tracking-wide text-slate-400">
+            Your taste, remembered. Your choices, always yours.
+          </p>
         </main>
       </section>
     );
