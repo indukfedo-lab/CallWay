@@ -245,10 +245,35 @@ function getTypeLabel(type: EntityType): string {
   return labels[type];
 }
 
+const ENTITY_CACHE_TTL_MS = 30 * 60 * 1000;
+
+const entityCache = new Map<
+  string,
+  {
+    entity: QlooEntity;
+    expiresAt: number;
+  }
+>();
+
 async function resolveEntity(
   query: string,
   apiKey: string,
 ): Promise<QlooEntity | null> {
+  const cacheKey = normalizeText(query);
+
+  // 1. Cek cache terlebih dahulu.
+  const cached = entityCache.get(cacheKey);
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.entity;
+  }
+
+  // Hapus cache yang sudah kedaluwarsa.
+  if (cached) {
+    entityCache.delete(cacheKey);
+  }
+
+  // 2. Kalau tidak ada di cache, panggil Qloo Search.
   const url = new URL(`${QLOO_BASE_URL}/search`);
 
   url.searchParams.set("query", query);
@@ -269,7 +294,9 @@ async function resolveEntity(
   const data: unknown = await response.json();
 
   const entities = getEntities(data).filter(
-    (entity) => typeof entity.name === "string" && Boolean(getEntityId(entity)),
+    (entity) =>
+      typeof entity.name === "string" &&
+      Boolean(getEntityId(entity)),
   );
 
   if (entities.length === 0) {
@@ -282,15 +309,24 @@ async function resolveEntity(
           ? Object.keys(data.results)
           : [],
     });
+
+    return null;
   }
 
   const exactMatch = entities.find(
-    (entity) => normalizeText(entity.name!) === normalizeText(query),
+    (entity) => normalizeText(entity.name!) === cacheKey,
   );
 
-  // Kalau hasilnya ambigu, jangan mengklaim kecocokan persis.
-  // Qloo mengembalikan kandidat teratas jika exact match tidak ada.
-  return exactMatch ?? entities[0] ?? null;
+  // Pertahankan perilaku pencarian sebelumnya.
+  const resolvedEntity = exactMatch ?? entities[0];
+
+  // 3. Simpan entity yang berhasil ditemukan selama 30 menit.
+  entityCache.set(cacheKey, {
+    entity: resolvedEntity,
+    expiresAt: Date.now() + ENTITY_CACHE_TTL_MS,
+  });
+
+  return resolvedEntity;
 }
 
 function getImageUrl(entity: QlooEntity): string | null {
@@ -558,17 +594,6 @@ export async function POST(request: Request) {
   try {
     // 1. Collect up to five references from this prompt and prior user turns.
     const queries = collectInterestQueries(prompt, messages);
-
-    // Tes ekstraksi lokal tanpa memanggil Qloo.
-    if (
-      process.env.NODE_ENV !== "production" &&
-      body.debugExtractOnly === true
-    ) {
-      return Response.json({
-        mode: "extraction-only",
-        queries,
-      });
-    }
 
     if (queries.length === 0) {
       return Response.json({
