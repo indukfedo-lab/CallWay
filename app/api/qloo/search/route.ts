@@ -2,14 +2,15 @@ const QLOO_SEARCH_URL = "https://hackathon.api.qloo.com/search";
 
 const ALLOWED_TYPES = [
   "urn:entity:artist",
-  "urn:entity:movie",
-  "urn:entity:tv_show",
   "urn:entity:book",
-  "urn:entity:place",
   "urn:entity:brand",
   "urn:entity:destination",
+  "urn:entity:movie",
+  "urn:entity:person",
+  "urn:entity:place",
   "urn:entity:podcast",
-  "urn:entity:video_game",
+  "urn:entity:tv_show",
+  "urn:entity:videogame",
 ];
 
 export async function GET(request: Request) {

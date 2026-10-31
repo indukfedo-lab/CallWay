@@ -3,7 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 import { User } from "@supabase/supabase-js";
-import { loginWithGoogle } from "@/components/Nav";
+import { loginWithGoogle } from "@/lib/auth";
 import Image from "next/image";
 import Sidebar from "@/components/Sidebar";
 import Main from "@/components/Main";
@@ -55,7 +55,7 @@ export function Welcome() {
           >
             <Image
               aria-hidden="true"
-              src="/loom-logo.png"
+              src="/loom-starter-logo.png"
               alt="Loom AI"
               width={32}
               height={32}

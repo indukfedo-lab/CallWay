@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 
@@ -27,7 +27,11 @@ type RecommendationCard = {
   type: string;
   imageUrl: string | null;
   description: string | null;
-  contributors: RecommendationContributor[];
+  metadata?: string[];
+  affinity?: number | null;
+  matchedTasteAttributes?: string[];
+  whyThisFits?: string;
+  contributors?: RecommendationContributor[];
   explainabilityAvailable: boolean;
 };
 
@@ -51,6 +55,14 @@ type message = {
   interests?: TasteInterest[];
   recommendations?: RecommendationCard[];
   signalValidation?: SignalValidation;
+  targetType?: string | null;
+  imageContext?: {
+    visualContext: string;
+    identifiedEntities: {
+      name: string;
+      type: string | null;
+    }[];
+  };
 };
 
 export default function Main({ missionId }: MainProps) {
@@ -62,6 +74,21 @@ export default function Main({ missionId }: MainProps) {
   const [status, setStatus] = useState("idle");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!selectedImage) {
+      setImagePreview(null);
+      return;
+    }
+
+    const url = URL.createObjectURL(selectedImage);
+    setImagePreview(url);
+
+    return () => URL.revokeObjectURL(url);
+  }, [selectedImage]);
 
   const [activeMissionId, setActiveMissionId] = useState<string | null>(
     missionId && missionId !== "new" ? missionId : null,
@@ -110,8 +137,18 @@ export default function Main({ missionId }: MainProps) {
     event.preventDefault();
 
     const userReq = input.trim();
+    const imageFile = selectedImage;
 
-    if (!userReq || isLoading) return;
+    if ((!userReq && !imageFile) || isLoading) return;
+
+    if (imageFile) {
+      setSelectedImage(null);
+      setImagePreview(null);
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
 
     setIsLoading(true);
     setError(null);
@@ -132,7 +169,7 @@ export default function Main({ missionId }: MainProps) {
         const { data, error } = await supabase
           .from("missions")
           .insert({
-            title: userReq,
+            title: userReq || "Image-based recommendations",
             messages: [],
             user_id: user.id,
           })
@@ -148,7 +185,12 @@ export default function Main({ missionId }: MainProps) {
       const userMessage: message = {
         id: crypto.randomUUID(),
         role: "user",
-        content: userReq,
+        content: [
+          userReq,
+          imageFile ? `[Image attached: ${imageFile.name}]` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
       };
 
       const newMessages = [...messages, userMessage];
@@ -161,16 +203,28 @@ export default function Main({ missionId }: MainProps) {
       await saveMessages(newMessages, currentMissionId);
 
       // Kirim prompt dan konteks chat ke backend Loom.
-      const request = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prompt: userReq,
-          messages: newMessages,
-        }),
-      });
+      let request: Response;
+
+      if (imageFile) {
+        const formData = new FormData();
+        formData.append("prompt", userReq);
+        formData.append("messages", JSON.stringify(newMessages));
+        formData.append("image", imageFile);
+
+        request = await fetch("/api/chat", {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        request = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: userReq,
+            messages: newMessages,
+          }),
+        });
+      }
 
       const response = await request.json();
 
@@ -180,6 +234,11 @@ export default function Main({ missionId }: MainProps) {
         );
       }
 
+      setSelectedImage(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+
       const assistantMessage: message = {
         id: crypto.randomUUID(),
         role: "assistant",
@@ -187,6 +246,8 @@ export default function Main({ missionId }: MainProps) {
         interests: response.interests ?? undefined,
         recommendations: response.recommendations ?? undefined,
         signalValidation: response.signalValidation ?? undefined,
+        targetType: response.targetType ?? undefined,
+        imageContext: response.imageContext ?? undefined,
       };
 
       const updatedMessages = [...newMessages, assistantMessage];
@@ -235,40 +296,108 @@ export default function Main({ missionId }: MainProps) {
         <form
           className={`prompt ${
             start
-              ? "absolute bottom-[20px] left-1/2 -translate-x-1/2 min-w-[min(640px,80%)]"
+              ? "absolute bottom-[20px] left-1/2 -translate-x-1/2 w-[min(640px,80%)]"
               : "w-[70%]"
           } flex flex-col items-center justify-center h-auto mt-2 gap-4`}
           onSubmit={sendPrompt}
         >
-          <div className="relative w-full">
+          <div className="w-full">
             <input
-              type="text"
-              placeholder="Enter your need here..."
-              className="w-full p-4 pr-16 pl-9 rounded-[30px] border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-900 bg-white text-black placeholder-gray-400 transition-colors duration-300"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+
+                if (file.size > 5 * 1024 * 1024) {
+                  setError("Image must be 5 MB or smaller.");
+                  e.target.value = "";
+                  return;
+                }
+
+                setError(null);
+                setSelectedImage(file);
+              }}
             />
-            <button
-              type="submit"
-              aria-label="Submit prompt"
-              disabled={isLoading}
-              className="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-blue-900 text-xl text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <svg
-                aria-hidden="true"
-                className="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth="2"
+
+            {/* Image preview - separate from input container */}
+            {imagePreview && (
+              <div className="mb-3 flex w-full items-center gap-3 rounded-xl border border-white/15 bg-white/10 p-2">
+                <img
+                  src={imagePreview}
+                  alt="Selected image"
+                  className="h-16 w-16 rounded-lg object-cover"
+                />
+
+                <span className="flex-1 truncate text-sm text-white/80">
+                  {selectedImage?.name}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedImage(null);
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                  }}
+                  className="px-3 text-white/70 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Input and buttons */}
+            <div className="relative w-full">
+              <input
+                type="text"
+                placeholder="Enter your need here..."
+                className="w-full rounded-[30px] border border-gray-300 bg-white p-4 pl-16 pr-16 text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-900"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+              />
+
+              <button
+                type="button"
+                aria-label="Upload image"
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full p-2 text-gray-500 hover:bg-gray-100"
               >
-                <path
+                {/* Icon image yang sekarang */}
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className="h-5 w-5"
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="3" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <path d="m21 15-5-5L5 21" />
+                </svg>
+              </button>
+
+              <button
+                type="submit"
+                aria-label="Submit prompt"
+                disabled={isLoading}
+                className="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-blue-900 text-xl text-white hover:bg-blue-800 disabled:opacity-50"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  d="M5 12h14M13 6l6 6-6 6"
-                />
-              </svg>
-            </button>
+                  className="h-5 w-5"
+                >
+                  <path d="M5 12h14" />
+                  <path d="m12 5 7 7-7 7" />
+                </svg>
+              </button>
+            </div>
           </div>
         </form>
         {error && (
@@ -348,6 +477,13 @@ export default function Main({ missionId }: MainProps) {
                                     .replace("urn:entity:", "")
                                     .replaceAll("_", " ")}
                                 </p>
+                                {typeof recommendation.affinity ===
+                                  "number" && (
+                                  <p className="mt-1 text-xs text-cyan-200/70">
+                                    Qloo affinity:{" "}
+                                    {recommendation.affinity.toFixed(3)}
+                                  </p>
+                                )}
                               </div>
                             </div>
 
@@ -361,21 +497,43 @@ export default function Main({ missionId }: MainProps) {
                               </p>
                             )}
 
+                            {recommendation.metadata?.length ? (
+                              <div className="space-y-2">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-white/50">
+                                  Qloo attributes
+                                </p>
+
+                                <div className="flex flex-wrap gap-2">
+                                  {recommendation.metadata.map(
+                                    (item, index) => (
+                                      <span
+                                        key={`${recommendation.id}-${index}`}
+                                        className="rounded-lg border border-white/10 bg-white/[0.06] px-2 py-1 text-xs capitalize text-white/70"
+                                      >
+                                        {item}
+                                      </span>
+                                    ),
+                                  )}
+                                </div>
+                              </div>
+                            ) : null}
+
                             <div className="border-t border-white/10 pt-3">
                               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-200">
                                 Why this may fit
                               </p>
 
-                              {recommendation.contributors.length > 0 ? (
+                              {(recommendation.contributors ?? []).length >
+                              0 ? (
                                 <div className="flex flex-wrap gap-2">
-                                  {recommendation.contributors.map(
+                                  {recommendation.contributors!.map(
                                     (contributor) => (
                                       <span
                                         key={contributor.id}
                                         className="rounded-lg bg-white/10 px-2 py-1 text-xs text-white/80"
                                       >
                                         {contributor.name}
-                                        {contributor.score !== undefined
+                                        {typeof contributor.score === "number"
                                           ? ` · ${contributor.score.toFixed(2)}`
                                           : ""}
                                       </span>
@@ -384,9 +542,8 @@ export default function Main({ missionId }: MainProps) {
                                 </div>
                               ) : (
                                 <p className="text-xs leading-relaxed text-white/50">
-                                  {recommendation.explainabilityAvailable
-                                    ? "Qloo returned explainability metadata, but no specific contributing signal was identified for this card."
-                                    : "Qloo did not provide per-recommendation contribution details for this card."}
+                                  {recommendation.whyThisFits ??
+                                    "Qloo did not return per-entity contribution data for this recommendation."}
                                 </p>
                               )}
                             </div>

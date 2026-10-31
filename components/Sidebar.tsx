@@ -51,7 +51,7 @@ export default function Sidebar() {
 
   return (
     <>
-      <section className="relative sidebar flex h-screen w-64 shrink-0 bg-white items-center flex-col">
+      <section className="relative sidebar flex h-screen w-64 shrink-0 bg-white items-center flex-col overflow-hidden">
         <Image
           src="/loom-header-logo.png"
           alt="Logo"
@@ -63,12 +63,12 @@ export default function Sidebar() {
           href={`/mission/new`}
           className={`text-lg font-bold text-black mt-10 hover:scale-115 transition-transform duration-300 translate-x-[-10%]`}
         >
-          + New Mission
+          + New Chat
         </Link>
         <p className="text-sm text-gray-500 mt-20 translate-x-[-30%]">
           History
         </p>
-        <div className="mt-[10px] w-full px-4">
+        <div className="mt-[10px] w-full px-4 flex-1 min-h-0 overflow-y-auto">
           {mission.map((misi) => (
             <Link
               key={misi.id}
@@ -79,7 +79,7 @@ export default function Sidebar() {
             </Link>
           ))}
         </div>
-        <div className="absolute bottom-[10px] w-full border-t border-gray-200 p-4">
+        <div className="mt-auto shrink-0 w-full border-t border-gray-200 p-4 bg-white">
           <button
             type="button"
             onClick={() => setProfileOpen((isOpen) => !isOpen)}
