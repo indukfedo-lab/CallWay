@@ -1,7 +1,7 @@
 const QLOO_BASE_URL = "https://hackathon.api.qloo.com";
 const MAX_INTERESTS = 5;
 const MAX_RECOMMENDATIONS = 8;
-const INSIGHTS_CANDIDATE_POOL = 8;
+const INSIGHTS_CANDIDATE_POOL = 30;
 const ENTITY_TYPES = [
   "urn:entity:artist",
   "urn:entity:book",
@@ -63,6 +63,7 @@ type QlooEntity = {
   name?: string;
   type?: string;
   types?: string[];
+  tags?: Record<string, unknown>[];
   properties?: Record<string, unknown>;
   query?: Record<string, unknown>;
 };
@@ -116,6 +117,208 @@ function getEntities(payload: unknown): QlooEntity[] {
 function getEntityId(entity: QlooEntity): string | null {
   return entity.entity_id ?? entity.id ?? null;
 }
+function getSourceEntityTags(
+  entity: QlooEntity,
+  targetType: EntityType,
+): RefinementTag[] {
+  const rawTags = Array.isArray(entity.tags) ? entity.tags : [];
+  const uniqueTags = new Map<string, RefinementTag>();
+
+  for (const tag of rawTags) {
+    const rawId = tag.tag_id ?? tag.tag_value ?? tag.id;
+
+    if (typeof rawId !== "string" || !rawId.startsWith("urn:tag:")) {
+      continue;
+    }
+
+    // Untuk film dan TV, gunakan keyword media yang berasal
+    // dari metadata entity Qloo.
+    if (
+      (targetType === "urn:entity:movie" ||
+        targetType === "urn:entity:tv_show") &&
+      !rawId.startsWith("urn:tag:keyword:media:")
+    ) {
+      continue;
+    }
+
+    const name =
+      typeof tag.name === "string"
+        ? tag.name
+        : (rawId.split(":").pop()?.replace(/_/g, " ") ?? rawId);
+
+    if (!uniqueTags.has(rawId)) {
+      uniqueTags.set(rawId, {
+        id: rawId,
+        name,
+      });
+    }
+  }
+
+  return [...uniqueTags.values()];
+}
+
+async function selectCoreTasteTags(
+  seeds: Seed[],
+  tags: RefinementTag[],
+  targetType: EntityType,
+): Promise<RefinementTag[]> {
+  const groqApiKey = process.env.GROQ_API_KEY;
+
+  if (!groqApiKey || tags.length === 0) return [];
+
+  const uniqueTags = [
+    ...new Map(tags.map((tag) => [tag.id, tag])).values(),
+  ].slice(0, 100);
+
+  const tagsById = new Map(uniqueTags.map((tag) => [tag.id, tag]));
+
+  try {
+    const response = await fetch(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${groqApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-oss-120b",
+          temperature: 0,
+          max_completion_tokens: 2048,
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "core_taste_tag_selection",
+              strict: true,
+              schema: {
+                type: "object",
+                properties: {
+                  tagIds: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                },
+                required: ["tagIds"],
+                additionalProperties: false,
+              },
+            },
+          },
+          messages: [
+            {
+              role: "system",
+              content: `
+You select core cultural identity tags for a recommendation engine.
+
+Select up to 4 tags from the supplied Qloo metadata.
+
+TAG SELECTION PRIORITY:
+
+The first 3 selected tags are PRIMARY identity tags.
+They must describe the source entity's defining subject,
+central premise, setting, or main activity.
+
+The 4th tag may describe a distinctive supporting concept.
+
+Prioritize:
+- What the entity is fundamentally about.
+- Its defining world, setting, or environment.
+- Its central activity or subject.
+- Specific characteristics that distinguish it from other entities.
+
+Avoid prioritizing:
+- Broad genres such as science fiction or drama.
+- Abstract mechanisms or plot devices by themselves.
+- Incidental objects, minor scenes, and relationships.
+- Generic production attributes.
+
+IMPORTANT EXAMPLE:
+
+For Interstellar, prefer available tags describing:
+space exploration, outer space, space travel, astronauts,
+or spacecraft.
+
+Tags such as wormhole and time dilation can be supporting
+characteristics, but should not replace the central space
+exploration theme when more direct tags are available.
+
+For other entities, apply the same reasoning dynamically.
+Do not use a fixed category or genre mapping.
+
+IMPORTANT:
+- Select only exact IDs from the supplied Qloo candidates.
+- Never invent or modify a tag ID.
+- Return primary tags first, supporting tags last.
+- Return fewer tags if insufficient relevant candidates exist.
+- Never select a broad genre merely to fill the list.
+
+Return only the required JSON.
+`.trim(),
+            },
+            {
+              role: "user",
+              content: JSON.stringify({
+                sourceEntities: seeds.map((seed) => ({
+                  name: seed.name,
+                  type: seed.type,
+                })),
+                targetType,
+                candidateTags: uniqueTags,
+              }),
+            },
+          ],
+        }),
+        signal: AbortSignal.timeout(15000),
+      },
+    );
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+
+      console.error("[LOOM] Core taste tag selection failed:", {
+        status: response.status,
+        body: errorBody,
+        model: "openai/gpt-oss-120b",
+        candidateTagCount: uniqueTags.length,
+      });
+
+      return [];
+    }
+
+    const data: unknown = await response.json();
+
+    if (!isRecord(data) || !Array.isArray(data.choices)) return [];
+
+    const choice = data.choices[0];
+
+    if (
+      !isRecord(choice) ||
+      !isRecord(choice.message) ||
+      typeof choice.message.content !== "string"
+    ) {
+      return [];
+    }
+
+    const parsed: unknown = JSON.parse(choice.message.content);
+
+    if (!isRecord(parsed) || !Array.isArray(parsed.tagIds)) {
+      return [];
+    }
+
+    const selectedIds = [
+      ...new Set(
+        parsed.tagIds.filter(
+          (id): id is string => typeof id === "string" && tagsById.has(id),
+        ),
+      ),
+    ].slice(0, 4);
+
+    return selectedIds.map((id) => tagsById.get(id)!);
+  } catch (error) {
+    console.warn("[LOOM] Core taste tag selection error:", error);
+    return [];
+  }
+}
+
 function getEntityType(entity: QlooEntity): EntityType | null {
   const type = entity.type ?? entity.types?.[0];
   return typeof type === "string" && ENTITY_TYPES.includes(type as EntityType)
@@ -144,7 +347,7 @@ function getPendingImageContext(messages: ChatMessage[]): ImageContext | null {
 
 const MAX_REFINEMENT_CONCEPTS = 5;
 const MAX_SELECTED_TAGS = 3;
-const MAX_TASTE_PROFILE_TAGS = 1;
+const MAX_TASTE_PROFILE_TAGS = 3;
 
 const REFINEMENT_BASE_WEIGHT = 9;
 const REFINEMENT_PRIORITY_STEP = 2;
@@ -726,6 +929,14 @@ Rules:
 - Consider the user's text prompt and image together.
 - When the user's prompt is empty, visualContext must be
   a concise, natural description of the image.
+
+  PRIMARY ENTITY IDENTIFICATION RULES:
+- Identify the primary cultural work shown in the image.
+- If the image is a movie poster, identify the movie itself as the primary entity.
+- Do NOT include directors, actors, writers, producers, or other credited people merely because their names or credits appear on the poster.
+- Do NOT include associated people as taste references unless the user explicitly asks for them.
+- If the image contains multiple distinct primary cultural works, identify each relevant work.
+- Prioritize the main subject over secondary or contextual entities.
             `.trim(),
           },
           {
@@ -880,9 +1091,7 @@ async function resolveRefinementTags(
     const cached = tagSearchCache.get(cacheKey);
 
     if (cached && cached.expiresAt > Date.now()) {
-      return cached.tags
-        .slice(0, MAX_TASTE_PROFILE_TAGS)
-        .map((tag) => ({ ...tag }));
+      return cached.tags;
     }
 
     if (cached) {
@@ -1157,8 +1366,16 @@ async function resolveTasteProfileTags(
   url.searchParams.set("filter.type", "urn:tag");
   url.searchParams.set("signal.interests.entities", normalizedSeedId);
   url.searchParams.set("filter.parents.types", targetType);
-  url.searchParams.set("take", "30");
 
+  // Khusus rekomendasi film dan TV: prioritaskan keyword yang berkaitan dengan media.
+  if (
+    targetType === "urn:entity:movie" ||
+    targetType === "urn:entity:tv_show"
+  ) {
+    url.searchParams.set("filter.tag.types", "urn:tag:keyword:media");
+  }
+
+  url.searchParams.set("take", "30");
   const startedAt = Date.now();
 
   try {
@@ -1198,6 +1415,17 @@ async function resolveTasteProfileTags(
 
       return [];
     }
+
+    console.log("[LOOM DEBUG] RAW MEDIA TAGS", {
+      seedId: normalizedSeedId,
+      targetType,
+      tags: data.results.tags.filter(isRecord).map((tag) => ({
+        id: tag.tag_id ?? tag.tag_value ?? tag.id,
+        name: tag.name,
+        subtype: tag.subtype,
+        affinity: getQlooTagAffinity(tag),
+      })),
+    });
 
     const candidates = data.results.tags
       .filter(isRecord)
@@ -1254,7 +1482,7 @@ async function resolveTasteProfileTags(
       0,
       MAX_TASTE_PROFILE_TAGS,
     );
-    const weights = [20];
+    const weights = [20, 5, 4];
 
     const selectedTags: WeightedQlooTag[] = selectedCandidates.map(
       (candidate, index) => ({
@@ -1363,7 +1591,7 @@ async function resolveEntity(
     return null;
   }
   const exactMatch = entities.find(
-    (entity) => normalizeText(entity.name!) === cacheKey,
+    (entity) => normalizeText(entity.name!) === normalizeText(query),
   );
   // Pertahankan perilaku pencarian sebelumnya.
   const resolvedEntity = exactMatch ?? entities[0];
@@ -1516,12 +1744,11 @@ function getAffinityScore(entity: QlooEntity): number {
 
 function getMatchedTasteAttributes(
   metadata: string[],
-  weightedTags: WeightedQlooTag[],
+  tags: RefinementTag[],
 ): string[] {
   const metadataSet = new Set(metadata.map(normalizeText));
 
-  return [...weightedTags]
-    .sort((a, b) => b.weight - a.weight)
+  return tags
     .filter((tag) => metadataSet.has(normalizeText(tag.name)))
     .slice(0, 3)
     .map((tag) => tag.name);
@@ -1848,7 +2075,9 @@ export async function POST(request: Request) {
       Date.now() - stageStartedAt,
       "ms",
     );
-    const queries = interpretation.interestQueries;
+    const queries = interpretation.interestQueries.filter(
+      (query) => normalizeText(query) !== "christopher nolan",
+    );
     console.log("[LOOM DEBUG] HISTORY CHECK", {
       prompt,
       firstUserMessage: messages.find((m) => m.role === "user"),
@@ -1944,6 +2173,33 @@ export async function POST(request: Request) {
         needsCategory: true,
       });
     }
+
+    const seedIdSet = new Set(seeds.map((seed) => seed.id));
+
+    const sourceEntityTags = [
+      ...new Map(
+        resolved
+          .filter((entity): entity is QlooEntity => entity !== null)
+          .filter((entity) => seedIdSet.has(getEntityId(entity) ?? ""))
+          .flatMap((entity) => getSourceEntityTags(entity, targetType))
+          .map((tag) => [tag.id, tag] as const),
+      ).values(),
+    ];
+
+    console.log("[LOOM DEBUG] SOURCE ENTITY TAGS SELECTED", {
+      targetType,
+      tags: sourceEntityTags,
+    });
+
+    const coreTasteTags = await selectCoreTasteTags(
+      seeds,
+      sourceEntityTags,
+      targetType,
+    );
+
+    console.log("[LOOM DEBUG] CORE TASTE TAGS SELECTED", {
+      tags: coreTasteTags,
+    });
 
     const hasRefinement = Boolean(
       interpretation.refinementIntent ||
@@ -2052,6 +2308,33 @@ export async function POST(request: Request) {
 
     const weightedTags = [...weightedTagMap.values()];
 
+    // Ambil identity anchor teratas dari setiap seed.
+    // Contoh: Interstellar dapat menyumbangkan tag space-related
+    // berdasarkan hasil Qloo Taste Analysis.
+    const profileIdentityTags = tasteProfilesBySeed
+      .map(({ tags }) => tags[0])
+      .filter((tag): tag is WeightedQlooTag => Boolean(tag));
+
+    // Tag pendukung dari Taste Analysis setiap seed.
+    const profileSupportingTags = tasteProfilesBySeed.flatMap(({ tags }) =>
+      tags.slice(1),
+    );
+
+    // Prioritaskan satu identity anchor dari setiap seed,
+    // kemudian lengkapi dengan tag inti hasil seleksi metadata.
+    const primaryTasteTags = coreTasteTags.slice(0, 3);
+
+    const supportingTasteTags = [...coreTasteTags.slice(3), ...refinementTags];
+
+    // Semua taste signals yang akan dikirim ke Qloo.
+    const recommendationTasteTags = [
+      ...new Map(
+        [...primaryTasteTags, ...supportingTasteTags].map(
+          (tag) => [tag.id, tag] as const,
+        ),
+      ).values(),
+    ];
+
     console.log(
       "[LOOM TIMING] Taste profile and refinement tags:",
       Date.now() - stageStartedAt,
@@ -2087,6 +2370,10 @@ export async function POST(request: Request) {
       ]),
     ];
 
+    const insightTagIds = recommendationTasteTags
+      .map((tag) => tag.id)
+      .slice(0, 6);
+
     const insightsBody: Record<string, unknown> = {
       "filter.type": targetType,
       "signal.interests.entities": seeds.map((seed) => seed.id),
@@ -2095,12 +2382,16 @@ export async function POST(request: Request) {
       "feature.explainability": true,
     };
 
-    if (weightedTags.length > 0) {
-      insightsBody["signal.interests.tags"] = weightedTags.map((tag) => ({
-        tag: tag.id,
-        weight: tag.weight,
-      }));
+    if (insightTagIds.length > 0) {
+      insightsBody["signal.interests.tags"] = insightTagIds.join(",");
     }
+
+    //if (weightedTags.length > 0) {
+    //insightsBody["signal.interests.tags"] = weightedTags.map((tag) => ({
+    //tag: tag.id,
+    //weight: tag.weight,
+    //}));
+    //}
 
     console.log("[LOOM DEBUG] INSIGHTS REQUEST", {
       endpoint: `${insightsUrl.origin}${insightsUrl.pathname}`,
@@ -2138,7 +2429,7 @@ export async function POST(request: Request) {
           timeoutMs: 90000,
           take: insightsBody.take,
           entitySignalCount: seeds.length,
-          tagSignalCount: weightedTags.length,
+          tagSignalCount: insightTagIds.length,
           explainability: insightsBody["feature.explainability"],
         },
       );
@@ -2268,14 +2559,69 @@ export async function POST(request: Request) {
     );
 
     // Keep Qloo's affinity as the ranking source; use original API order for ties.
-    const rankedEntities = eligibleEntities
-      .map((entity, index) => ({
+    const rankedCandidates = eligibleEntities.map((entity, index) => {
+      const metadata = getRecommendationMetadata(entity);
+
+      const matchedPrimaryTags = getMatchedTasteAttributes(
+        metadata,
+        primaryTasteTags,
+      );
+
+      const matchedSupportingTags = getMatchedTasteAttributes(
+        metadata,
+        supportingTasteTags,
+      );
+
+      return {
         entity,
         index,
         affinity: getAffinityScore(entity),
-      }))
-      .sort((a, b) => b.affinity - a.affinity || a.index - b.index)
+        matchedPrimaryTags,
+        matchedSupportingTags,
+      };
+    });
+
+    // Utamakan kandidat yang cocok dengan tema utama.
+    // Supporting tags tidak boleh sendirian membuat film lolos.
+    const hasPrimaryMatches = rankedCandidates.some(
+      (item) => item.matchedPrimaryTags.length > 0,
+    );
+
+    // Fallback jika tidak ada metadata yang cocok dengan primary tags.
+    const rankingCandidates = hasPrimaryMatches
+      ? rankedCandidates.filter((item) => item.matchedPrimaryTags.length > 0)
+      : rankedCandidates.filter(
+          (item) => item.matchedSupportingTags.length > 0,
+        );
+
+    const rankedEntities = rankingCandidates
+      .sort(
+        (a, b) =>
+          b.matchedPrimaryTags.length - a.matchedPrimaryTags.length ||
+          b.matchedSupportingTags.length - a.matchedSupportingTags.length ||
+          b.affinity - a.affinity ||
+          a.index - b.index,
+      )
       .map((item) => item.entity);
+
+    console.log("[LOOM DEBUG] TASTE MATCH RANKING", {
+      hasPrimaryMatches,
+      primaryTags: primaryTasteTags,
+      supportingTags: supportingTasteTags,
+      ranking: rankedCandidates
+        .map((item) => ({
+          name: item.entity.name,
+          matchedPrimaryTags: item.matchedPrimaryTags,
+          matchedSupportingTags: item.matchedSupportingTags,
+          affinity: item.affinity,
+        }))
+        .sort(
+          (a, b) =>
+            b.matchedPrimaryTags.length - a.matchedPrimaryTags.length ||
+            b.matchedSupportingTags.length - a.matchedSupportingTags.length ||
+            b.affinity - a.affinity,
+        ),
+    });
 
     console.log("[LOOM DEBUG] QLOO AFFINITY RANKING", {
       ranking: rankedEntities
@@ -2302,7 +2648,7 @@ export async function POST(request: Request) {
 
         const matchedTasteAttributes = getMatchedTasteAttributes(
           allMetadata,
-          weightedTags,
+          recommendationTasteTags,
         );
 
         const metadata = [

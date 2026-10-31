@@ -77,6 +77,7 @@ export default function Main({ missionId }: MainProps) {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!selectedImage) {
@@ -95,18 +96,31 @@ export default function Main({ missionId }: MainProps) {
   );
 
   useEffect(() => {
-    if (!missionId || missionId === "new") return;
+    if (!missionId || missionId === "new") {
+      setActiveMissionId(null);
+      setMessages([]);
+      setStart(false);
+      setError(null);
+      return;
+    }
+
+    const currentMissionId = missionId;
 
     async function loadMission() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
+      if (!user) {
+        setError("You must be logged in.");
+        return;
+      }
+
       const { data, error } = await supabase
         .from("missions")
         .select("messages")
-        .eq("id", missionId)
-        .eq("user_id", user!.id)
+        .eq("id", currentMissionId)
+        .eq("user_id", user.id)
         .single();
 
       if (error) {
@@ -114,8 +128,9 @@ export default function Main({ missionId }: MainProps) {
         return;
       }
 
+      setActiveMissionId(currentMissionId);
       setMessages(data.messages || []);
-      setStart(true);
+      setStart((data.messages || []).length > 0);
     }
 
     loadMission();
@@ -198,6 +213,10 @@ export default function Main({ missionId }: MainProps) {
       setMessages(newMessages);
       setStart(true);
       setInput("");
+
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "56px";
+      }
 
       // Simpan pesan user ke Supabase.
       await saveMessages(newMessages, currentMissionId);
@@ -349,22 +368,14 @@ export default function Main({ missionId }: MainProps) {
             )}
 
             {/* Input and buttons */}
-            <div className="relative w-full">
-              <input
-                type="text"
-                placeholder="Enter your need here..."
-                className="w-full rounded-[30px] border border-gray-300 bg-white p-4 pl-16 pr-16 text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-900"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-              />
-
+            <div className="flex w-full items-center gap-2 rounded-[32px] border border-gray-300 bg-white px-3 py-2 focus-within:ring-2 focus-within:ring-blue-900">
+              {/* Upload button */}
               <button
                 type="button"
                 aria-label="Upload image"
                 onClick={() => fileInputRef.current?.click()}
-                className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full p-2 text-gray-500 hover:bg-gray-100"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100"
               >
-                {/* Icon image yang sekarang */}
                 <svg
                   viewBox="0 0 24 24"
                   fill="none"
@@ -378,11 +389,34 @@ export default function Main({ missionId }: MainProps) {
                 </svg>
               </button>
 
+              {/* Textarea */}
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                placeholder="Enter your need here..."
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+
+                  const textarea = e.currentTarget;
+                  textarea.style.height = "auto";
+                  textarea.style.height = `${textarea.scrollHeight}px`;
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    e.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                className="min-h-[40px] max-h-40 min-w-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1 py-2 leading-6 text-black placeholder-gray-400 outline-none focus:ring-0"
+              />
+
+              {/* Send button */}
               <button
                 type="submit"
                 aria-label="Submit prompt"
                 disabled={isLoading}
-                className="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-blue-900 text-xl text-white hover:bg-blue-800 disabled:opacity-50"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-900 text-white hover:bg-blue-800 disabled:opacity-50"
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -410,9 +444,9 @@ export default function Main({ missionId }: MainProps) {
             {messages.map((message) => (
               <div
                 key={message.id}
-                className={`message text-sm ${
+                className={`message min-w-0 text-sm ${
                   message.role === "user"
-                    ? "bg-[rgba(255,255,255,0.2)] border border-white rounded-[20px] self-end"
+                    ? "max-w-[60%] bg-[rgba(255,255,255,0.2)] border border-white rounded-[20px] self-end [overflow-wrap:anywhere]"
                     : "self-start"
                 } ${
                   message.role === "assistant" &&

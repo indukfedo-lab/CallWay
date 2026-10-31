@@ -37,6 +37,15 @@ body {
     linear-gradient(145deg, #071522 0%, #0b1d31 48%, #071522 100%);
 }
 
+.prompt textarea {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.prompt textarea::-webkit-scrollbar {
+  display: none;
+}
+
 .silk-field {
   position: absolute;
   z-index: -1;
@@ -194,4 +203,13 @@ body {
 
 .sidebar div::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Center Sonner toast horizontally and vertically */
+[data-sonner-toaster][data-x-position="center"][data-y-position="top"] {
+  top: calc(50% - 72px) !important;
+  bottom: auto !important;
+  left: 50% !important;
+  right: auto !important;
+  transform: translateX(-50%) !important;
 }
