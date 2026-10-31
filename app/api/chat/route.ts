@@ -144,7 +144,7 @@ function getPendingImageContext(messages: ChatMessage[]): ImageContext | null {
 
 const MAX_REFINEMENT_CONCEPTS = 5;
 const MAX_SELECTED_TAGS = 3;
-const MAX_TASTE_PROFILE_TAGS = 5;
+const MAX_TASTE_PROFILE_TAGS = 1;
 
 const REFINEMENT_BASE_WEIGHT = 9;
 const REFINEMENT_PRIORITY_STEP = 2;
@@ -880,7 +880,9 @@ async function resolveRefinementTags(
     const cached = tagSearchCache.get(cacheKey);
 
     if (cached && cached.expiresAt > Date.now()) {
-      return cached.tags;
+      return cached.tags
+        .slice(0, MAX_TASTE_PROFILE_TAGS)
+        .map((tag) => ({ ...tag }));
     }
 
     if (cached) {
@@ -1247,8 +1249,12 @@ async function resolveTasteProfileTags(
     });
 
     // 1 identity anchor + 3 supporting tags.
-    const selectedCandidates = uniqueCandidates.slice(0, 4);
-    const weights = [20, 5, 4, 3];
+    // Use only the top Taste Analysis tag per seed.
+    const selectedCandidates = uniqueCandidates.slice(
+      0,
+      MAX_TASTE_PROFILE_TAGS,
+    );
+    const weights = [20];
 
     const selectedTags: WeightedQlooTag[] = selectedCandidates.map(
       (candidate, index) => ({
