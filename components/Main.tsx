@@ -308,8 +308,8 @@ export default function Main({ missionId }: MainProps) {
             height={80}
             className="h-auto w-[32%] hover:scale-110 transition-transform duration-300"
           />
-          <h1 className="text-[1.4rem] font-bold text-gray-600 mt-1 hover:scale-105 transition-transform duration-300">
-            Your Culturally Intelligent Friend.
+          <h1 className="text-[1.4rem] font-bold text-white-200 mt-1 hover:scale-105 transition-transform duration-300">
+            Let's have a chat!
           </h1>
         </div>
         <form
@@ -393,7 +393,7 @@ export default function Main({ missionId }: MainProps) {
               <textarea
                 ref={textareaRef}
                 rows={1}
-                placeholder="Enter your need here..."
+                placeholder="Recommend me Movies, Music, Books, Fashion, Travel, More..."
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);

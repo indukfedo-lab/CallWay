@@ -55,7 +55,7 @@ export function Welcome() {
           >
             <Image
               aria-hidden="true"
-              src="/loom-starter-logo.png"
+              src="/loom-head-logo.png"
               alt="Loom AI"
               width={32}
               height={32}
